@@ -1,6 +1,6 @@
 # agile-integration-homework
 
-##作业验证步骤：
+## 作业验证步骤：
 0. 本地有OpenJDK v1.8、Maven v3.5.4、A-MQ v7.2.2和curl-7.29.0-42.el7_4.1  
 
 1. 下载作业的源码工程
@@ -74,7 +74,7 @@ curl -X POST -H "Content-Type: application/xml" --data @./BadPatientInfo.xml htt
 向正确的URL发送错误的报文，验证Inbound正确处理报文，返回MATCH的结果。  
 
 
-##实现思路说明：
+## 实现思路说明：
 
 根据https://www.opentlc.com/labs/agile_integration_advanced/06_1_Assignment_Lab.html的指示  
 业务需求是将DEIM系统与Nextgate系统集成，其中涉及到系统之间的协议转换、报文转换、异步处理和异常处理等环节。  
@@ -238,7 +238,7 @@ curl -X POST -H "Content-Type: application/xml" --data @./BadPatientInfo.xml htt
 
 ```
 
-##一些想法：
+## 一些想法：
 这是一个典型的应用集成场景。  
 之前的实现的方法是camel是在karaf中通过osgi，将以上各工程做为features集成在一起，运行在一个jvm实例中。  
 其它的ESB软件也是类似，将所有的流程集成在一起。即使是集群部署，各个节点部署的是所有的服务和流程。  
