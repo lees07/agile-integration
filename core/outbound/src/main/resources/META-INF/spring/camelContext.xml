@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+   xmlns:camel="http://camel.apache.org/schema/spring"
+   xmlns:context="http://www.springframework.org/schema/context"
+   xmlns:cxf="http://camel.apache.org/schema/cxf"
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd   http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd   http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd   http://camel.apache.org/schema/cxf  http://camel.apache.org/schema/cxf/camel-cxf.xsd">
+   <!-- The way properties are used changes WILDLY between deployment platforms.
+       Everything is handled automatically for you here
+       but pay attention to running on Fabric vs OpenShift vs Standalone.
+       The way properties are used here is NOT best practices for any of them
+       and is instead a mix because it is intended to demo on all of them. -->
+   <!-- set property values here so we don't have to recompile to change them 
+   <osgix:cm-properties id="outboundProps" persistent-id="com.customer.outbound">
+      <prop key="nextgate.url">cxf://http://localhost:8181/cxf/PersonEJBService/PersonEJB?serviceClass=com.sun.mdm.index.webservice.PersonEJB&amp;dataFormat=MESSAGE</prop>
+   </osgix:cm-properties>
+ -->
+   <!-- This reference just lets all of our routes use the same
+  connection pool set up in the mq-service project
+   <osgi:reference id="activemqService" interface="org.apache.camel.Component"/>
+ -->
+   <bean
+      class="org.apache.camel.dataformat.soap.name.ServiceInterfaceStrategy" id="serviceStrategy">
+      <constructor-arg value="com.sun.mdm.index.webservice.PersonEJB"/>
+      <constructor-arg value="true"/>
+   </bean>
+
+   <bean class="org.apache.activemq.ActiveMQConnectionFactory" id="jmsConnectionFactory">
+      <property name="brokerURL" value="tcp://localhost:61616"/>
+   </bean>
+   <bean class="org.apache.activemq.pool.PooledConnectionFactory"
+      destroy-method="stop" id="pooledConnectionFactory" init-method="start">
+      <property name="maxConnections" value="8"/>
+      <property name="connectionFactory" ref="jmsConnectionFactory"/>
+   </bean>
+   <bean class="org.springframework.jms.core.JmsTemplate" id="jmsTemplate">
+      <property name="connectionFactory" ref="pooledConnectionFactory"/>
+   </bean>
+
+   <bean class="com.redhat.customer.translate.TransformToParams" id="myTypeConverter"/>
+
+   <cxf:cxfEndpoint
+      address="http://localhost:7001/PersonEJBService/PersonEJB"
+      id="nextgateService" loggingFeatureEnabled="true"
+      serviceClass="com.sun.mdm.index.webservice.PersonEJB" 
+      wsdlURL="classpath:wsdl/EMPI_18080_2.wsdl"/>
+
+   <camelContext id="outboundSOAP" trace="false" 
+      typeConverterStatisticsEnabled="true" xmlns="http://camel.apache.org/schema/spring">
+      <!-- 
+      <propertyPlaceholder id="myPropertyPlaceholder" location="ref:outboundProps"/>
+ -->
+      <dataFormats>
+         <soapjaxb contextPath="com.sun.mdm.index.webservice"
+            elementNameStrategyRef="serviceStrategy" id="nextgateFormat"/>
+      </dataFormats>
+      <!-- stream caching has to be enabled to process the message and log it from cxf -->
+      <route id="sendToNextGate" streamCache="true">
+         <from id="_from1" uri="activemq:queue:q.empi.nextgate.out"/>
+         <log id="_log1" loggingLevel="INFO" message="receive msg from q: ${body}"/>
+         <setProperty propertyName="bodyMsg">
+            <simple>${body}</simple>
+         </setProperty>
+         <to id="_to1" uri="direct:convert"/>
+      </route>
+      <route id="convert" streamCache="true">
+         <from id="_from2" uri="direct:convert"/>
+         <unmarshal id="_unmarshal1" ref="nextgateFormat"/>
+
+         <log id="_log3" loggingLevel="INFO" message="after unmarshal: ${body}"/>
+         <convertBodyTo id="_convertBodyTo1" type="java.util.List"/>
+         <log id="_log4" loggingLevel="INFO" message="after convert: ${body}"/>
+
+         <to id="_to2" uri="cxf:bean:nextgateService?defaultOperationName=executeMatchUpdate"/>
+
+         <!-- redelivery 3 times -->
+         <onException id="_onException1">
+            <exception>java.net.ConnectException</exception>
+            <redeliveryPolicy maximumRedeliveries="3" redeliveryDelay="0"/>
+            <transform>
+               <simple>${exchangeProperty[bodyMsg]}</simple>
+            </transform>
+            <log id="_log2" loggingLevel="INFO" message="on error: ${body}"/>
+            <inOnly id="_to3" uri="activemq:queue:q.empi.nextgate.dlq"/>
+         </onException>
+
+      </route>
+   </camelContext>
+</beans>
